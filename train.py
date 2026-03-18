@@ -7,9 +7,10 @@ Usage: uv run train.py
 import os
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
-
 import gc
+import json
 import math
+import subprocess
 import time
 from dataclasses import dataclass, asdict
 
@@ -451,6 +452,25 @@ DEPTH = 8               # number of transformer layers
 DEVICE_BATCH_SIZE = 128  # per-device batch size (reduce if OOM)
 
 # ---------------------------------------------------------------------------
+# Run config
+# ---------------------------------------------------------------------------
+
+def _git_commit_hash():
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        return "unknown"
+
+run_config = dict(
+    aspect_ratio=ASPECT_RATIO, head_dim=HEAD_DIM, window_pattern=WINDOW_PATTERN,
+    total_batch_size=TOTAL_BATCH_SIZE, embedding_lr=EMBEDDING_LR, unembedding_lr=UNEMBEDDING_LR,
+    matrix_lr=MATRIX_LR, scalar_lr=SCALAR_LR, weight_decay=WEIGHT_DECAY,
+    adam_betas=ADAM_BETAS, warmup_ratio=WARMUP_RATIO, warmdown_ratio=WARMDOWN_RATIO,
+    final_lr_frac=FINAL_LR_FRAC, depth=DEPTH, device_batch_size=DEVICE_BATCH_SIZE,
+    max_seq_len=MAX_SEQ_LEN, time_budget=TIME_BUDGET, git_commit=_git_commit_hash(),
+)
+
+# ---------------------------------------------------------------------------
 # Setup: tokenizer, model, optimizer, dataloader
 # ---------------------------------------------------------------------------
 
@@ -539,6 +559,7 @@ t_start_training = time.time()
 smooth_train_loss = 0
 total_training_time = 0
 step = 0
+metrics_file = open("metrics.jsonl", "w")
 
 while True:
     torch.cuda.synchronize()
@@ -587,6 +608,16 @@ while True:
     mfu = 100 * num_flops_per_token * TOTAL_BATCH_SIZE / dt / H100_BF16_PEAK_FLOPS
     remaining = max(0, TIME_BUDGET - total_training_time)
 
+    # Write per-step metrics to metrics.jsonl
+    step_metrics = {
+        "step": step, "train/loss": train_loss_f, "train/loss_smooth": debiased_smooth_loss,
+        "train/lr_multiplier": lrm, "train/muon_momentum": muon_momentum,
+        "train/weight_decay": muon_weight_decay, "train/progress": progress,
+        "perf/step_time_ms": dt * 1000, "perf/tokens_per_sec": tok_per_sec,
+        "perf/mfu_percent": mfu,
+    }
+    metrics_file.write(json.dumps(step_metrics) + "\n")
+
     print(f"\rstep {step:05d} ({pct_done:.1f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt*1000:.0f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.1f}% | epoch: {epoch} | remaining: {remaining:.0f}s    ", end="", flush=True)
 
     # GC management (Python's GC causes ~500ms stalls)
@@ -604,6 +635,7 @@ while True:
         break
 
 print()  # newline after \r training log
+metrics_file.close()
 
 total_tokens = step * TOTAL_BATCH_SIZE
 
@@ -628,3 +660,19 @@ print(f"total_tokens_M:   {total_tokens / 1e6:.1f}")
 print(f"num_steps:        {step}")
 print(f"num_params_M:     {num_params / 1e6:.1f}")
 print(f"depth:            {DEPTH}")
+
+# Write run_summary.json for analyze.py
+run_summary = {
+    **run_config,
+    "val_bpb": val_bpb,
+    "training_seconds": total_training_time,
+    "total_seconds": t_end - t_start,
+    "startup_seconds": startup_time,
+    "peak_vram_mb": peak_vram_mb,
+    "mfu_percent": steady_state_mfu,
+    "total_tokens_M": total_tokens / 1e6,
+    "num_steps": step,
+    "num_params_M": num_params / 1e6,
+}
+with open("run_summary.json", "w") as f:
+    json.dump(run_summary, f, indent=2)

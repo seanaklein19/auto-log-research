@@ -21,3 +21,10 @@ dev/
 
 # Results file
 results.tsv
+
+# Experiment tracking artifacts
+.auto-log-research/
+run_summary.json
+run.log
+metrics.jsonl
+analysis.md

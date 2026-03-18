@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv add:*)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''train.py''\\).read\\(\\)\\); print\\(''train.py: OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''analyze.py''\\).read\\(\\)\\); print\\(''analyze.py: OK''\\)\")",
+      "Bash(uv run:*)",
+      "Bash(uv remove:*)"
+    ]
+  }
+}
