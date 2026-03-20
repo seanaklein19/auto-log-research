@@ -1,8 +1,9 @@
 # auto-log-research
 
-**Autonomous AI research with deep experiment tracking.** An AI agent doesn't just tweak hyperparameters -- it investigates training dynamics, forms hypotheses, and runs targeted experiments. Every run logs per-step metrics (loss curves, LR schedules, MFU, step times) to simple JSONL files. The agent digs into this data between runs, generates plots, spots anomalies, and uses what it learns to decide what to try next.
+Built on top of [Karpathy's autoresearch](https://github.com/karpathy/autoresearch), this fork adds the missing piece: **the agent can actually see what happened during training**, not just the final number. Providing the agent with the right context signifincalty improves efficiency of the autoresearch agent.
 
-Built on top of [Karpathy's autoresearch](https://github.com/karpathy/autoresearch), which pioneered the idea of giving an AI agent a training setup and letting it experiment autonomously overnight. This fork adds the missing piece: **the agent can actually see what happened during training**, not just the final number.
+![Progress plot](progress.png)
+Comparison done on a single H100 using Claude Opus 4.6 within Claude Code.
 
 ## What's different from autoresearch?
 
@@ -13,8 +14,7 @@ Built on top of [Karpathy's autoresearch](https://github.com/karpathy/autoresear
 | **Experiment tracking** | TSV with 5 columns | Structured archives with per-step metrics + agent research notes |
 | **Analysis** | None -- agent flies blind | Automated baseline stats + agent-driven investigation with Python |
 | **Knowledge accumulation** | Reset every run | `insights.md` (validated findings + current best tracking) + `ideas_queue.md` (prioritized hypotheses) |
-| **Best tracking** | Compares to last run | Always compares against all-time best, always builds on best commit |
-| **Research quality** | Hyperparameter search | Hypothesis-driven experimentation |
+| **Research** | Hyperparameter search | Hypothesis-driven experimentation |
 
 The core insight: **an agent that understands *why* a change helped will make better next moves than one that only knows *whether* it helped.**
 
@@ -66,11 +66,8 @@ uv sync
 # 3. Download data and train tokenizer (one-time, ~2 min)
 uv run prepare.py
 
-# 4. Run a single training experiment (~5 min)
-uv run train.py
-
-# 5. Run post-training analysis
-uv run analyze.py
+# 4. Run Claude Code agent
+cat program.md | claude -p 
 ```
 
 ## Running the autonomous agent
@@ -82,15 +79,6 @@ Hi have a look at program.md and let's kick off a new experiment! let's do the s
 ```
 
 The agent reads `program.md`, sets up a branch, runs the baseline, and enters the autonomous experiment loop. It will keep going indefinitely -- leave it overnight and come back to a log of experiments, each with full analysis.
-
-### Slurm environments
-
-If you're running on a Slurm cluster, the agent uses:
-```bash
-srun --account=gdpgroup --partition=gdpgroup-a6000 --qos=gdpgroup-main --gpus=1 --mem=64G uv run train.py > run.log 2>&1
-```
-
-Modify the account/partition/QoS in `program.md` to match your cluster.
 
 ## Project structure
 
