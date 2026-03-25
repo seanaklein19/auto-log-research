@@ -507,7 +507,7 @@ model.to_empty(device=device)
 model.init_weights()
 
 # QKV: register hooks BEFORE torch.compile (hooks attach to original modules)
-qkv_tracker = qkv_logger.init(model, log_dir="./qkv_logs", detail_every=10, hook_filter="linear")
+qkv_tracker = qkv_logger.init(model, log_dir="./qkv_logs", detail_every=10, hook_filter="linear", hook_every=2)
 print(f"QKV: hooked {len(qkv_tracker._hooks.handles)} modules, logging to {qkv_tracker.parquet_path}")
 
 param_counts = model.num_scaling_params()
