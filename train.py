@@ -18,6 +18,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import qkv.capture.logger as qkv_logger
+
 from kernels import get_kernel
 cap = torch.cuda.get_device_capability()
 # varunneal's FA3 is Hopper only, use kernels-community on non-Hopper GPUs
@@ -504,6 +506,10 @@ with torch.device("meta"):
 model.to_empty(device=device)
 model.init_weights()
 
+# QKV: register hooks BEFORE torch.compile (hooks attach to original modules)
+qkv_tracker = qkv_logger.init(model, log_dir="./qkv_logs", detail_every=10, hook_filter="linear")
+print(f"QKV: hooked {len(qkv_tracker._hooks.handles)} modules, logging to {qkv_tracker.parquet_path}")
+
 param_counts = model.num_scaling_params()
 print("Parameter counts:")
 for key, value in param_counts.items():
@@ -585,6 +591,9 @@ while True:
     optimizer.step()
     model.zero_grad(set_to_none=True)
 
+    # QKV: log per-layer stats for this step
+    qkv_tracker.step(loss=train_loss, lr=lrm)
+
     train_loss_f = train_loss.item()
 
     # Fast fail: abort if loss is exploding or NaN
@@ -637,6 +646,10 @@ while True:
 print()  # newline after \r training log
 metrics_file.close()
 
+# QKV: flush and close capture
+qkv_tracker.close()
+print(f"QKV capture saved to: {qkv_tracker.parquet_path}")
+
 total_tokens = step * TOTAL_BATCH_SIZE
 
 # Final eval
@@ -664,6 +677,7 @@ print(f"depth:            {DEPTH}")
 # Write run_summary.json for analyze.py
 run_summary = {
     **run_config,
+    "qkv_parquet": qkv_tracker.parquet_path,
     "val_bpb": val_bpb,
     "training_seconds": total_training_time,
     "total_seconds": t_end - t_start,

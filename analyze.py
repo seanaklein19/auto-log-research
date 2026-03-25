@@ -17,6 +17,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from qkv.distill import distill_run
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -182,6 +184,10 @@ def archive_run(commit_short, run_summary, history):
         shutil.copy2(RUN_LOG, run_dir / "run.log")
     if METRICS_JSONL.exists():
         shutil.copy2(METRICS_JSONL, run_dir / "metrics.jsonl")
+    # Archive QKV parquet if present
+    qkv_parquet = run_summary.get("qkv_parquet")
+    if qkv_parquet and os.path.exists(qkv_parquet):
+        shutil.copy2(qkv_parquet, run_dir / Path(qkv_parquet).name)
     return run_dir
 
 # ---------------------------------------------------------------------------
@@ -274,7 +280,7 @@ def generate_plots(history, run_dir, results):
 # Generate analysis.md
 # ---------------------------------------------------------------------------
 
-def generate_analysis(run_summary, traj_stats, results, run_dir, plot_files, commit_short):
+def generate_analysis(run_summary, traj_stats, results, run_dir, plot_files, commit_short, distill_record=None):
     val_bpb = run_summary.get("val_bpb", 0)
 
     lines = []
@@ -373,6 +379,45 @@ def generate_analysis(run_summary, traj_stats, results, run_dir, plot_files, com
     lines.append("Keys: `step`, `train/loss`, `train/loss_smooth`, `train/lr_multiplier`, `train/muon_momentum`, `train/weight_decay`, `train/progress`, `perf/step_time_ms`, `perf/tokens_per_sec`, `perf/mfu_percent`")
     lines.append("")
 
+    # QKV Distill: per-layer analysis
+    if distill_record:
+        lines.append("## Per-Layer Analysis (QKV Distill)")
+        lines.append("")
+        lines.append(distill_record.to_briefing())
+        lines.append("")
+
+        if distill_record.events:
+            lines.append(f"### Events Detected: {len(distill_record.events)}")
+            for ev in distill_record.events[:10]:
+                lines.append(f"- Step {ev.get('step', '?')}: {ev.get('type', '?')} "
+                             f"(metric={ev.get('metric', '?')}, z={ev.get('z_score', 0):.1f})")
+            lines.append("")
+
+        if distill_record.activation_health:
+            lines.append("### Activation Health Issues")
+            for ah in distill_record.activation_health:
+                lines.append(f"- **{ah['layer']}**: {', '.join(ah.get('issues', []))}")
+            lines.append("")
+
+        if distill_record.gradient_flow and distill_record.gradient_flow.get("flow_type"):
+            gf = distill_record.gradient_flow
+            lines.append(f"### Gradient Flow: {gf['flow_type']}")
+            if gf.get("bottleneck"):
+                lines.append(f"- Bottleneck: {gf['bottleneck']}")
+            lines.append(f"- Uniformity: {gf.get('uniformity', 0):.2f}")
+            lines.append("")
+
+        if distill_record.layer_trends:
+            growing = [lt for lt in distill_record.layer_trends if lt.get("trend") == "growing"]
+            shrinking = [lt for lt in distill_record.layer_trends if lt.get("trend") == "shrinking"]
+            if growing or shrinking:
+                lines.append("### Layer Norm Trends")
+                for lt in growing[:5]:
+                    lines.append(f"- **{lt['name']}** ({lt.get('kind', '?')}): growing +{lt.get('change_pct', 0):.0f}%")
+                for lt in shrinking[:5]:
+                    lines.append(f"- **{lt['name']}** ({lt.get('kind', '?')}): shrinking {lt.get('change_pct', 0):.0f}%")
+                lines.append("")
+
     # Agent section
     lines.append("## Agent Investigation Notes")
     lines.append("")
@@ -421,6 +466,19 @@ def main():
     run_dir = archive_run(commit, run_summary, history)
     print(f"  Archived to: {run_dir}")
 
+    # Run QKV distill (heuristic pass — no LLM calls)
+    qkv_parquet = run_summary.get("qkv_parquet")
+    distill_record = None
+    if qkv_parquet and os.path.exists(qkv_parquet):
+        print(f"  Running QKV distill on {qkv_parquet}...")
+        try:
+            distill_record = distill_run(qkv_parquet, config=run_summary, use_llm=False)
+            print(f"  Distill: {distill_record.num_layers} layers, {len(distill_record.events)} events")
+        except Exception as e:
+            print(f"  Warning: QKV distill failed: {e}", file=sys.stderr)
+    else:
+        print("  No QKV parquet found, skipping distill")
+
     # Generate plots
     print("  Generating plots...")
     plot_files = generate_plots(history, run_dir, results)
@@ -432,7 +490,7 @@ def main():
     print(f"  Appended to results.tsv (status=pending)")
 
     # Generate analysis
-    analysis_path = generate_analysis(run_summary, traj_stats, results, run_dir, plot_files, commit)
+    analysis_path = generate_analysis(run_summary, traj_stats, results, run_dir, plot_files, commit, distill_record)
     print(f"  Analysis: {analysis_path}")
 
     print("  Done.")

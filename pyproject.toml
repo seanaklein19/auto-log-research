@@ -14,12 +14,14 @@ dependencies = [
     "rustbpe>=0.1.0",
     "tiktoken>=0.11.0",
     "torch==2.9.1",
+    "qkv",
 ]
 
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cu128" },
 ]
+qkv = { path = "../logging", editable = true }
 
 [[tool.uv.index]]
 name = "pytorch-cu128"

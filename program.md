@@ -85,7 +85,7 @@ All experiment data lives in `.auto-log-research/`:
   insights.md              # Your validated insights + CURRENT BEST tracking
   ideas_queue.md           # Queue of ideas to try next
   <commit>/
-    analysis.md            # Baseline stats + YOUR investigation notes (you must write to this!)
+    analysis.md            # Baseline stats + per-layer analysis + YOUR investigation notes
     run_summary.json       # Config + final metrics
     run.log                # Full training output
     metrics.jsonl          # Per-step metrics (loss, LR, MFU, step time, etc.)
@@ -93,6 +93,8 @@ All experiment data lives in `.auto-log-research/`:
     lr_and_schedule.png    # Auto-generated: LR, weight decay, momentum schedules
     gpu_perf.png           # Auto-generated: MFU and step time vs step
     *.png                  # Any additional plots you generate
+qkv_logs/
+  run_*.parquet            # Per-layer activation/gradient stats (QKV capture)
 ```
 
 **results.tsv** has 5 tab-separated columns:
@@ -155,6 +157,32 @@ Things to look for:
 - **GPU utilization**: Is MFU stable? Any step-time spikes?
 - **Cross-run patterns**: Do certain types of changes have consistent effects?
 - **Where differences emerge**: At what training step does this run diverge from the previous one?
+
+#### Per-Layer Data (QKV)
+
+Each run also captures per-layer activation and gradient statistics to a Parquet file in `qkv_logs/`. The `analyze.py` script automatically runs distill on this data and includes findings in `analysis.md` under "Per-Layer Analysis (QKV Distill)". This includes:
+
+- **Layer health**: gradient and activation norms ranked by z-score, outlier detection
+- **Gradient flow**: vanishing/exploding detection, bottleneck identification
+- **Activation health**: dead neuron risk (high zeros), collapse risk (low std), exploding activations
+- **Events**: loss and gradient spikes via rolling z-scores
+- **Layer trends**: per-layer norm growth/shrinkage over time
+
+Use these findings to inform architectural decisions. For example:
+- If a layer has dead neurons, consider increasing its width or changing activation
+- If gradient flow is vanishing in deep layers, consider skip connections or normalization changes
+- If activation norms are growing in later layers, the model may need better initialization or gradient clipping
+- Layer-specific anomalies can reveal which components of the architecture are underperforming
+
+You can also load the raw Parquet data directly for deeper investigation:
+```python
+from qkv.compression.reader import read_run
+run = read_run("qkv_logs/run_YYYYMMDD_HHMMSS.parquet")
+# Get per-layer backward gradient norms over time
+norms = run.get_layer_series("transformer.h.0.attn.c_attn", "backward", "norm")
+# Get step-level loss
+losses = run.get_step_series("loss_train")
+```
 
 ### 3. SYNTHESIZE: Write your findings to analysis.md
 
