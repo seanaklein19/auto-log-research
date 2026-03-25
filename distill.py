@@ -26,8 +26,8 @@ def main():
     if record.events:
         print(f"\nEvents: {len(record.events)}")
         for ev in record.events[:10]:
-            print(f"  Step {ev.get('step', '?')}: {ev.get('type', '?')} "
-                  f"(metric={ev.get('metric', '?')}, z={ev.get('z_score', 0):.1f})")
+            print(f"  [{ev.get('severity', '?')}] step {ev.get('step', '?')}: "
+                  f"{ev.get('kind', '?')} (z={ev.get('z_score', 0):.1f})")
 
     if record.activation_health:
         print("\nActivation health issues:")
