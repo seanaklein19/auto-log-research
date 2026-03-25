@@ -23,27 +23,6 @@ def main():
     record = distill_run(pq)
     print(record.to_briefing())
 
-    if record.events:
-        print(f"\nEvents: {len(record.events)}")
-        for ev in record.events[:10]:
-            print(f"  [{ev.get('severity', '?')}] step {ev.get('step', '?')}: "
-                  f"{ev.get('kind', '?')} (z={ev.get('z_score', 0):.1f})")
-
-    if record.activation_health:
-        print("\nActivation health issues:")
-        for ah in record.activation_health:
-            print(f"  {ah['layer']}: {', '.join(ah.get('issues', []))}")
-
-    if record.layer_trends:
-        growing = [lt for lt in record.layer_trends if lt.get("trend") == "growing"]
-        shrinking = [lt for lt in record.layer_trends if lt.get("trend") == "shrinking"]
-        if growing or shrinking:
-            print("\nLayer norm trends:")
-            for lt in growing[:5]:
-                print(f"  {lt['name']} ({lt.get('kind', '?')}): growing +{lt.get('change_pct', 0):.0f}%")
-            for lt in shrinking[:5]:
-                print(f"  {lt['name']} ({lt.get('kind', '?')}): shrinking {lt.get('change_pct', 0):.0f}%")
-
 
 if __name__ == "__main__":
     main()
